@@ -1,0 +1,77 @@
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.StringTokenizer;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapred.lib.MultipleInputs;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class JoinTables {
+	public static class CustomerMapper extends
+			Mapper<Object, Text, Text, Text> {
+		public void map(Object key, Text value, Context context)
+				throws IOException, InterruptedException {
+			String input = "customer,"+value.toString();
+			String[] tuple = input.split(",");// Tuple = ['customer',Customer ID, First Name, Last Name]
+			context.write(new Text(tuple[1]), new Text(input));
+		}
+	}
+	public static class TransactionMapper extends
+	Mapper<Object, Text, Text, Text> {
+	public void map(Object key, Text value, Context context)
+		throws IOException, InterruptedException {
+	String input = "transaction,"+value.toString();
+	String[] tuple = input.split(",");// Tuple = ['customer',Transaction ID, Date, Customer ID, Amount]
+	context.write(new Text(tuple[3]), new Text(input));
+}
+}
+
+	public static class JoinTablesReducer extends
+			Reducer<Text, Text, Text, Text> {
+		private IntWritable result = new IntWritable();
+
+		public void reduce(Text key, Iterable<Text> values,
+				Context context) throws IOException, InterruptedException {
+			ArrayList<String[]> customers = new ArrayList<>();
+			ArrayList<String[]> transactions = new ArrayList<>();		
+			for (Text val : values) {
+				String input = val.toString();
+				String[] tuple = input.split(",");
+				if (tuple[0].equals("customer"))
+					customers.add(tuple);
+				else
+					transactions.add(tuple);
+			}
+			String joinedTable = "";
+			for( String[] customer : customers)
+				for (String[] transaction: transactions){
+					String joinedTuples = Arrays.toString(customer)+ Arrays.toString(transaction);
+					joinedTable+=joinedTuples+"\n";
+				}
+			
+			context.write(new Text("*"), new Text(joinedTable));
+		}
+	}
+
+	public static void main(String[] args) throws Exception {
+		Configuration conf = new Configuration();
+		Job job = Job.getInstance(conf, "word count");
+		job.setJarByClass(JoinTables.class);
+		job.setReducerClass(JoinTablesReducer.class);
+		org.apache.hadoop.mapreduce.lib.input.MultipleInputs.addInputPath(job, new Path(args[0]), TextInputFormat.class, CustomerMapper.class);
+		org.apache.hadoop.mapreduce.lib.input.MultipleInputs.addInputPath(job, new Path(args[1]), TextInputFormat.class, TransactionMapper.class);
+		job.setOutputKeyClass(Text.class);
+		job.setOutputValueClass(Text.class);
+		FileOutputFormat.setOutputPath(job, new Path(args[2]));
+		System.exit(job.waitForCompletion(true) ? 0 : 1);
+	}
+}
